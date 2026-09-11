@@ -6,6 +6,7 @@
   - [ ] Recursive discovery
   - [ ] Preserving input file's directory
   - [ ] Removing input file once the conversion is complete
+- [ ] Check if `opus` file audio format works on iOS / iPadOS (`ogg` doesn't IRRC)
 
 ## Common Dependencies
 
@@ -31,6 +32,24 @@ brew install libheif webp
 ```
 
 ## Audio Optimization
+
+### Anki
+
+Optimizing media for Anki is pretty straightforward.
+
+Speech survives brutal compression fine. 32 kpbs target is more than enough.
+
+Target format is `opus`. Best format: Opus (~10x smaller than 128k MP3, sounds better than MP3 at same bitrate), it's arguably the best lossy format available. The only downside is that it might be unsupported on some devices / operating systems.
+
+#### Dependencies
+
+```sh
+brew install ffmpeg
+```
+
+### ASMR / Old music with lower bitrates
+
+Soon<sup>TM</sup>
 
 ## Video Optimization
 

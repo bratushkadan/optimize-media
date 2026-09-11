@@ -4,6 +4,8 @@ from pathlib import Path
 
 p = Path("./")
 
+OPUS_QUALITY_KB = 32
+
 IMAGES_FORMATS = {
     "JPEG": ["jpeg", "jpg"],
     "PNG":  ["png"],
@@ -197,6 +199,8 @@ def old_main():
               stdout=None,  # наследовать stdout родителя (по умолчанию)
               stderr=None,  # наследовать stderr родителя (по умолчанию)
           )
+          # the command below is for reducing the bitrate and making target file .mp3 format
+          #   ffmpeg -i "$f" -ac 1 -c:a libmp3lame -b:a 32k "${f%.wav}.mp3"
 
   # Рекурсивно все файлы
   # for file in p.rglob("*"):
