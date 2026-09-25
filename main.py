@@ -30,8 +30,6 @@ for format_aliases in IMAGES_FORMATS.values():
   for alias in format_aliases:
     ENABLED_FORMATS.add(alias)
 
-COMPRESSED_PATH = "./_compressed"
-
 def run_cmd(
   cmd,
   args,
@@ -70,9 +68,8 @@ def get_compression_threshold(size_bytes):
     return 10
 
 def main():
-  Path(COMPRESSED_PATH).mkdir(parents=True, exist_ok=True)
   
-  for file in p.iterdir():
+  for file in p.rglob("*"):
     if not file.is_file():
         continue
 
@@ -84,31 +81,31 @@ def main():
       continue
     
     filename = file.name
+    parent_dir = file.parent
     
     if ext.lower() in IMAGES_FORMATS["HEIF"]:
-      png_filename = f"{file.name.rstrip(f".{ext}")}.png"
+      png_filename = f"{file.name.rstrip(f'.{ext}')}.png"
+      png_path = parent_dir / png_filename
       
-      run_cmd("heif-convert", [filename, png_filename])
+      run_cmd("heif-convert", [str(file), str(png_path)])
       
       filename = png_filename
       ext = "png"
     
-    output_filename = f"{filename.rstrip(f".{ext}")}.webp"
-    output_path = f"{COMPRESSED_PATH}/{output_filename}"
+    output_filename = f"{filename.rstrip(f'.{ext}')}.webp"
+    output_path = parent_dir / output_filename
     
-    run_cmd("cwebp", ["-q", str(WEBP_QUALITY), filename, "-o", f"{output_path}"])
-    print(f"Converted {filename} to WEBP format (quality {WEBP_QUALITY}): {filename} -> {output_path}")
+    run_cmd("cwebp", ["-q", str(WEBP_QUALITY), str(parent_dir / filename), "-o", str(output_path)])
+    print(f"Converted {filename} to WEBP format (quality {WEBP_QUALITY}): {file} -> {output_path}")
     
     if orig_ext.lower() in IMAGES_FORMATS["HEIF"]:
-      Path(filename).unlink()
+      (parent_dir / filename).unlink()
     
 
 def old_main():
 
-  Path(COMPRESSED_PATH).mkdir(parents=True, exist_ok=True)
-
   # Только имена файлов и папок
-  for file in p.iterdir():
+  for file in p.rglob("*"):
       if not file.is_file():
           continue
 
@@ -124,7 +121,7 @@ def old_main():
       if extension_type == None:
           continue
 
-      size = os.path.getsize(file.name)
+      size = os.path.getsize(file)
       kib = round(size / 1024, 2)
 
       if extension_type == "JPEG":
@@ -135,8 +132,8 @@ def old_main():
                   str(get_compression_threshold(size)),
                   "--strip-all",
                   "--dest",
-                  COMPRESSED_PATH,
-                  file.name,
+                  str(file.parent),
+                  str(file),
               ],
               stdout=None,  # наследовать stdout родителя (по умолчанию)
               stderr=None,  # наследовать stderr родителя (по умолчанию)
@@ -151,8 +148,8 @@ def old_main():
                   "1",
                   "--strip",
                   "--output",
-                  f"{COMPRESSED_PATH}/{file.name}",
-                  file.name,
+                  str(file.parent / file.name),
+                  str(file),
               ],
               stdout=None,  # наследовать stdout родителя (по умолчанию)
               stderr=None,  # наследовать stderr родителя (по умолчанию)
@@ -165,9 +162,9 @@ def old_main():
                   "--lossy=320",
                   "--colors=128",
                   "--resize=320x_",
-                  file.name,
+                  str(file),
                   "-o",
-                  f"{COMPRESSED_PATH}/{file.name}",
+                  str(file.parent / file.name),
               ],
               stdout=None,  # наследовать stdout родителя (по умолчанию)
               stderr=None,  # наследовать stderr родителя (по умолчанию)
@@ -177,7 +174,7 @@ def old_main():
               [
                   "ffmpeg",
                   "-i",
-                  file.name,
+                  str(file),
                   "-ac",
                   "1",
                   "-c:a",
@@ -194,7 +191,7 @@ def old_main():
                   "-1",
                   "-fflags",
                   "+bitexact",
-                  f"{COMPRESSED_PATH}/{file.name}.opus",
+                  str(file.parent / f"{file.name}.opus"),
               ],
               stdout=None,  # наследовать stdout родителя (по умолчанию)
               stderr=None,  # наследовать stderr родителя (по умолчанию)
