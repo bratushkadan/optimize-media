@@ -1,3 +1,4 @@
+import argparse
 import subprocess
 import os
 from pathlib import Path
@@ -10,12 +11,14 @@ IMAGES_FORMATS = {
     "JPEG": ["jpeg", "jpg"],
     "PNG":  ["png"],
     "HEIF": ["heic", "heif"],
+    "DNG": ["dng"],
     # "GIF":  ["gif"],
 }
 
 AUDIO_FORMATS = {
     "MP3":  ["mp3"],
     "WAV":  ["wav"],
+    "M4A":  ["m4a"],
 }
 
 FORMATS = {
@@ -23,7 +26,7 @@ FORMATS = {
   *AUDIO_FORMATS,
 }
 
-WEBP_QUALITY = 20
+WEBP_QUALITY_DEFAULT = 30
 
 ENABLED_FORMATS = set()
 for format_aliases in IMAGES_FORMATS.values():
@@ -67,40 +70,92 @@ def get_compression_threshold(size_bytes):
         return 20
     return 10
 
-def main():
-  
-  for file in p.rglob("*"):
-    if not file.is_file():
-        continue
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Recursively convert images to WEBP and compress audio."
+    )
+    parser.add_argument(
+        "-q", "--quality",
+        type=int,
+        default=WEBP_QUALITY_DEFAULT,
+        help=f"WEBP quality (0-100, default: {WEBP_QUALITY_DEFAULT}). "
+             "100 = lossless-ish, lower = smaller/more compressed.",
+    )
+    return parser.parse_args()
 
-    
-    orig_ext = file.suffix.lstrip(".")
-    ext = file.suffix.lstrip(".")
-    
-    if not ext.lower() in ENABLED_FORMATS:
-      continue
-    
-    filename = file.name
-    parent_dir = file.parent
-    
-    if ext.lower() in IMAGES_FORMATS["HEIF"]:
-      png_filename = f"{file.name.rstrip(f'.{ext}')}.png"
-      png_path = parent_dir / png_filename
-      
-      run_cmd("heif-convert", [str(file), str(png_path)])
-      
-      filename = png_filename
-      ext = "png"
-    
-    output_filename = f"{filename.rstrip(f'.{ext}')}.webp"
-    output_path = parent_dir / output_filename
-    
-    run_cmd("cwebp", ["-q", str(WEBP_QUALITY), str(parent_dir / filename), "-o", str(output_path)])
-    print(f"Converted {filename} to WEBP format (quality {WEBP_QUALITY}): {file} -> {output_path}")
-    
-    if orig_ext.lower() in IMAGES_FORMATS["HEIF"]:
-      (parent_dir / filename).unlink()
-    
+def main():
+    args = parse_args()
+    webp_quality = args.quality
+
+    # Все поддерживаемые аудио-расширения
+    audio_exts = set()
+    for aliases in AUDIO_FORMATS.values():
+        for alias in aliases:
+            audio_exts.add(alias)
+
+    for file in p.rglob("*"):
+        if not file.is_file():
+            continue
+
+        orig_ext = file.suffix.lstrip(".")
+        ext = file.suffix.lstrip("")
+        ext_lower = orig_ext.lower()
+
+        # --- АУДИО ---
+        if ext_lower in audio_exts:
+            output_path = file.parent / f"{file.name.rstrip(f'.{ext}')}.opus"
+            if output_path.exists():
+                continue
+
+            run_cmd(
+                "ffmpeg",
+                [
+                    "-i", str(file),
+                    "-map", "0:a",
+                    "-c:a", "libopus",
+                    "-b:a", "128k",
+                    "-vbr", "on",
+                    "-compression_level", "10",
+                    "-map_metadata", "0",
+                    str(output_path),
+                ],
+            )
+            print(f"Converted audio {file} -> {output_path}")
+            continue
+
+        # --- ИЗОБРАЖЕНИЯ ---
+        if not ext_lower in ENABLED_FORMATS:
+            continue
+
+        filename = file.name
+        parent_dir = file.parent
+
+        output_filename = f"{filename.rstrip(f'.{ext}')}.webp"
+        output_path = parent_dir / output_filename
+        if output_path.exists():
+            continue
+
+        if ext_lower in IMAGES_FORMATS["HEIF"]:
+            png_filename = f"{file.name.rstrip(f'.{ext}')}.png"
+            png_path = parent_dir / png_filename
+
+            try:
+                run_cmd("heif-convert", [str(file), str(png_path)])
+                
+                filename = png_filename
+                ext = "png"
+            except:
+                filename = f"{file.name.rstrip(f'.{ext}')}.jpg"
+                file_path = parent_dir / filename
+                file.rename(file_path)
+
+        output_path = parent_dir / output_filename
+
+        run_cmd("cwebp", ["-q", str(webp_quality), str(parent_dir / filename), "-o", str(output_path)])
+        print(f"Converted {filename} to WEBP format (quality {webp_quality}): {file} -> {output_path}")
+
+        if orig_ext.lower() in IMAGES_FORMATS["HEIF"]:
+            (parent_dir / filename).unlink()
 
 def old_main():
 
