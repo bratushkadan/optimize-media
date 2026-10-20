@@ -19,6 +19,17 @@ AUDIO_FORMATS = {
     "MP3": ["mp3"],
     "WAV": ["wav"],
     "M4A": ["m4a"],
+    "AIFF": ["aiff", "aif"],
+    "WMA": ["wma"],
+}
+
+# FFmpeg demuxer names do not always match file extensions.
+AUDIO_INPUT_FORMATS = {
+    "MP3": "mp3",
+    "WAV": "wav",
+    "M4A": "mov",
+    "AIFF": "aiff",
+    "WMA": "asf",
 }
 
 FORMATS = {
@@ -92,10 +103,11 @@ def main():
     webp_quality = args.quality
 
     # Все поддерживаемые аудио-расширения
-    audio_exts = set()
-    for aliases in AUDIO_FORMATS.values():
-        for alias in aliases:
-            audio_exts.add(alias)
+    audio_exts = {
+        alias: AUDIO_INPUT_FORMATS[format_name]
+        for format_name, aliases in AUDIO_FORMATS.items()
+        for alias in aliases
+    }
 
     for file in p.rglob("*"):
         if not file.is_file():
@@ -115,7 +127,7 @@ def main():
                 "ffmpeg",
                 [
                     "-f",
-                    file.suffix.lower().lstrip("."),
+                    audio_exts[ext_lower],
                     "-i",
                     str(file),
                     # "-map",
