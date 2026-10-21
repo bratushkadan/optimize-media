@@ -38,7 +38,7 @@ FORMATS = {
     *AUDIO_FORMATS,
 }
 
-WEBP_QUALITY_DEFAULT = 30
+WEBP_QUALITY_DEFAULT = None
 
 ENABLED_FORMATS = set()
 for format_aliases in IMAGES_FORMATS.values():
@@ -93,20 +93,32 @@ def parse_args():
         "--quality",
         type=int,
         default=WEBP_QUALITY_DEFAULT,
-        help=f"WEBP quality (0-100, default: {WEBP_QUALITY_DEFAULT}). "
-        "100 = lossless-ish, lower = smaller/more compressed.",
+        help="Override automatic WEBP quality (0-100). Resizing remains automatic.",
     )
     parser.add_argument(
         "--overwrite", action="store_true",
         help="Reconvert and atomically replace existing WEBP files; audio is unchanged.",
     )
     args = parser.parse_args()
-    if not 0 <= args.quality <= 100:
+    if args.quality is not None and not 0 <= args.quality <= 100:
         parser.error("quality must be between 0 and 100")
     return args
 
 
-def convert_image(file, quality, overwrite=False):
+def image_settings(size, size_bytes):
+    longest = max(size)
+    if longest <= 1600:
+        limit, quality = 1600, 80
+    elif longest <= 3000:
+        limit, quality = 1920, 75
+    else:
+        limit, quality = 2560, 75
+    if size_bytes <= 250 * 1024:
+        quality = 85
+    return limit, quality
+
+
+def convert_image(file, quality=None, overwrite=False):
     from PIL import Image, ImageOps
 
     output_path = file.with_suffix(".webp")
@@ -125,27 +137,38 @@ def convert_image(file, quality, overwrite=False):
         temp_dir = Path(temp)
         normalized_path = temp_dir / "normalized.png"
         encoded_path = temp_dir / "encoded.webp"
+        lossless_path = temp_dir / "lossless.webp"
         with Image.open(file) as image:
             normalized = ImageOps.exif_transpose(image)
+            original_size = normalized.size
+            limit, auto_quality = image_settings(original_size, file.stat().st_size)
+            selected_quality = auto_quality if quality is None else quality
             icc_profile = normalized.info.get("icc_profile")
             if normalized.mode not in ("RGB", "RGBA"):
                 has_alpha = "A" in normalized.getbands() or "transparency" in normalized.info
                 mode = "RGBA" if has_alpha else "RGB"
                 normalized = normalized.convert(mode)
+            normalized.thumbnail((limit, limit), Image.Resampling.LANCZOS)
             # Strip stale EXIF/XMP after baking orientation into pixels.
             normalized.info.clear()
             normalized.save(normalized_path, format="PNG", icc_profile=icc_profile)
             expected_size = normalized.size
-        run_cmd("cwebp", ["-q", str(quality), "-metadata", "icc",
+        run_cmd("cwebp", ["-q", str(selected_quality), "-metadata", "icc",
                           str(normalized_path), "-o", str(encoded_path)])
-        with Image.open(encoded_path) as result:
+        run_cmd("cwebp", ["-lossless", "-metadata", "icc",
+                          str(normalized_path), "-o", str(lossless_path)])
+        selected_path = min((encoded_path, lossless_path), key=lambda path: path.stat().st_size)
+        encoding = "lossless" if selected_path == lossless_path else f"quality {selected_quality}"
+        with Image.open(selected_path) as result:
             result.load()
             if result.format != "WEBP" or result.size != expected_size:
                 raise ValueError(f"Invalid WEBP output: {file}")
         if output_path.exists() and not overwrite:
             return False
-        encoded_path.replace(output_path)
-    print(f"Converted image {file} -> {output_path} (quality {quality})")
+        selected_path.replace(output_path)
+    print(f"Converted image {file} -> {output_path} "
+          f"({original_size[0]}x{original_size[1]} -> "
+          f"{expected_size[0]}x{expected_size[1]}, {encoding})")
     return True
 
 

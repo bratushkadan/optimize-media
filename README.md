@@ -79,3 +79,22 @@ unchanged. If different source formats share one basename, they target the same
 WebP path; keep only the intended source in the conversion directory when
 reconverting. Previously generated files with truncated names must be reviewed
 separately: the script does not delete them.
+
+### Automatic image compression
+
+By default quality is selected per image: up to 1600 pixels on the longest
+side uses quality 80, 1601–3000 pixels uses quality 75 with a 1920-pixel limit,
+and larger images use quality 75 with a 2560-pixel limit. Sources up to 250 KiB
+use quality 85. Images are never enlarged. Both lossy and lossless WebP are
+encoded from the oriented/resized image and the smaller file is kept.
+Lossless here refers to encoding after resizing; resizing itself loses detail.
+
+Run without `-q` for automatic quality:
+
+```sh
+python3 /path/to/optimize-media/main.py --overwrite
+```
+
+An explicit `-q` overrides automatic quality, while resizing and comparison
+with lossless remain enabled. The size thresholds are heuristics, not a
+perceptual quality guarantee.
