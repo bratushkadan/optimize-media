@@ -1,6 +1,7 @@
 import argparse
 import subprocess
 import os
+import tempfile
 from pathlib import Path
 
 p = Path("./")
@@ -95,7 +96,57 @@ def parse_args():
         help=f"WEBP quality (0-100, default: {WEBP_QUALITY_DEFAULT}). "
         "100 = lossless-ish, lower = smaller/more compressed.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--overwrite", action="store_true",
+        help="Reconvert and atomically replace existing WEBP files; audio is unchanged.",
+    )
+    args = parser.parse_args()
+    if not 0 <= args.quality <= 100:
+        parser.error("quality must be between 0 and 100")
+    return args
+
+
+def convert_image(file, quality, overwrite=False):
+    from PIL import Image, ImageOps
+
+    output_path = file.with_suffix(".webp")
+    if output_path.exists() and not overwrite:
+        return False
+
+    if file.suffix.lower().lstrip(".") in IMAGES_FORMATS["HEIF"]:
+        from pillow_heif import register_heif_opener
+        # libheif applies container transforms; the plugin resets EXIF orientation
+        # so ImageOps does not apply the same rotation twice.
+        register_heif_opener()
+
+    # Keep temporary files on the same filesystem for atomic replacement.
+    # Source images are never renamed or deleted.
+    with tempfile.TemporaryDirectory(prefix=".webp-", dir=file.parent) as temp:
+        temp_dir = Path(temp)
+        normalized_path = temp_dir / "normalized.png"
+        encoded_path = temp_dir / "encoded.webp"
+        with Image.open(file) as image:
+            normalized = ImageOps.exif_transpose(image)
+            icc_profile = normalized.info.get("icc_profile")
+            if normalized.mode not in ("RGB", "RGBA"):
+                has_alpha = "A" in normalized.getbands() or "transparency" in normalized.info
+                mode = "RGBA" if has_alpha else "RGB"
+                normalized = normalized.convert(mode)
+            # Strip stale EXIF/XMP after baking orientation into pixels.
+            normalized.info.clear()
+            normalized.save(normalized_path, format="PNG", icc_profile=icc_profile)
+            expected_size = normalized.size
+        run_cmd("cwebp", ["-q", str(quality), "-metadata", "icc",
+                          str(normalized_path), "-o", str(encoded_path)])
+        with Image.open(encoded_path) as result:
+            result.load()
+            if result.format != "WEBP" or result.size != expected_size:
+                raise ValueError(f"Invalid WEBP output: {file}")
+        if output_path.exists() and not overwrite:
+            return False
+        encoded_path.replace(output_path)
+    print(f"Converted image {file} -> {output_path} (quality {quality})")
+    return True
 
 
 def main():
@@ -109,12 +160,11 @@ def main():
         for alias in aliases
     }
 
-    for file in p.rglob("*"):
+    for file in list(p.rglob("*")):
         if not file.is_file():
             continue
 
         orig_ext = file.suffix.lstrip(".")
-        ext = file.suffix.lstrip("")
         ext_lower = orig_ext.lower()
 
         # --- АУДИО ---
@@ -152,46 +202,12 @@ def main():
         if not ext_lower in ENABLED_FORMATS:
             continue
 
-        filename = file.name
-        parent_dir = file.parent
-
-        output_filename = f"{filename.rstrip(f'.{ext}')}.webp"
-        output_path = parent_dir / output_filename
-        if output_path.exists():
-            continue
-
-        if ext_lower in IMAGES_FORMATS["HEIF"]:
-            png_filename = f"{file.name.rstrip(f'.{ext}')}.png"
-            png_path = parent_dir / png_filename
-
-            try:
-                run_cmd("heif-convert", [str(file), str(png_path)])
-
-                filename = png_filename
-                ext = "png"
-            except:
-                filename = f"{file.name.rstrip(f'.{ext}')}.jpg"
-                file_path = parent_dir / filename
-                file.rename(file_path)
-
-        output_path = parent_dir / output_filename
-
-        run_cmd(
-            "cwebp",
-            [
-                "-q",
-                str(webp_quality),
-                str(parent_dir / filename),
-                "-o",
-                str(output_path),
-            ],
-        )
-        print(
-            f"Converted {filename} to WEBP format (quality {webp_quality}): {file} -> {output_path}"
-        )
-
-        if orig_ext.lower() in IMAGES_FORMATS["HEIF"]:
-            (parent_dir / filename).unlink()
+        try:
+            convert_image(file, webp_quality, overwrite=args.overwrite)
+        except (OSError, ValueError, subprocess.CalledProcessError, ImportError) as error:
+            print(f"ERROR {file}: {error}")
+            if isinstance(error, ImportError):
+                print("Install image dependencies: python3 -m pip install Pillow pillow-heif")
 
 
 def old_main():

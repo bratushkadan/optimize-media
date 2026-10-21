@@ -28,7 +28,8 @@ This number seems to be the sweet spot for the quality retention / image storing
 ### Images Optimization Dependencies
 
 ```sh
-brew install libheif webp
+brew install webp
+python3 -m pip install Pillow pillow-heif
 ```
 
 ## Audio Optimization
@@ -54,3 +55,27 @@ Soon<sup>TM</sup>
 ## Video Optimization
 
 Soon<sup>TM</sup>
+
+### Image orientation and reconversion
+
+Image conversion applies EXIF rotation/reflection to pixels before WebP encoding.
+HEIC/HEIF is decoded through pillow-heif, including container transformations.
+ICC colour profiles are retained. Other EXIF/XMP metadata is not copied.
+Source images are never renamed or deleted; temporary files are cleaned up.
+Unreadable or unsupported images are reported and skipped (including DNG files
+that the installed decoder cannot open).
+
+Run from the directory containing your media:
+
+```sh
+python3 /path/to/optimize-media/main.py -q 30
+# Regenerate existing WebP from originals, including incorrectly oriented files:
+python3 /path/to/optimize-media/main.py -q 30 --overwrite
+```
+
+Existing WebP is skipped by default. With `--overwrite`, replacement happens only
+after successful encoding and decoding of a temporary WebP. Audio behaviour is
+unchanged. If different source formats share one basename, they target the same
+WebP path; keep only the intended source in the conversion directory when
+reconverting. Previously generated files with truncated names must be reviewed
+separately: the script does not delete them.
